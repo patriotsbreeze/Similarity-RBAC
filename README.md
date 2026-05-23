@@ -51,35 +51,51 @@ Full BibTeX: [`paper/references.bib`](paper/references.bib)
 
 ---
 
-## Benchmark Results (Synthetic Biomedical Dataset)
+## Benchmark Results (Synthetic Biomedical Dataset, N=50k, d=768)
 
-### Experiment 1: Selectivity vs. Recall@10
+> Full figures: [`results/plots/`](results/plots/) — PDF + PNG for all experiments.
 
-| Selectivity | % Accessible | RBAC-HNSW (ef=200) | Post-filter (ef=200) |
-|-------------|--------------|---------------------|----------------------|
-| open        | ~40 %        | 0.86+               | 0.86+                |
-| medium      | ~2 %         | **1.00**            | 1.00                 |
-| restricted  | ~0.4 %       | **1.00**            | 1.00                 |
-| strict      | ~0.02 %      | **1.00**            | 1.00                 |
-| ultra       | ~0.001 %     | **1.00**            | 1.00                 |
+### Experiment 1: Recall@10 vs. Selectivity (ef=200)
 
-> At high selectivity (≥ 20 %), post-filtering and RBAC-HNSW are equivalent.
-> The routing strategy provides larger gains at scale (1M vectors) where the
-> accessible set becomes a tiny island in the graph.
+| Selectivity | % Accessible | RBAC-HNSW | Post-filter | Notes |
+|-------------|:------------:|:---------:|:-----------:|-------|
+| open        | 39.87 %      | 0.474     | 0.467       | Recall bounded by ef (same as vanilla HNSW) |
+| medium      | 1.57 %       | **0.998** | **0.999**   | Near-perfect at ef=200 |
+| restricted  | 0.37 %       | **1.000** | **1.000**   | Perfect recall — small accessible set |
+| strict      | 0.02 %       | **1.000** | **1.000**   | Perfect |
+| ultra       | 0.00 %       | 0.000     | 0.000       | 0 accessible vectors in 50k DB |
 
-### Experiment 3: Memory Overhead
+*At the "open" level, recall is governed purely by ef (same as vanilla HNSW).
+At medium–strict selectivity, the small accessible set is easily saturated.*
 
-For N=1M vectors, d=768, M=16:
+### Experiment 2: Throughput (QPS) at ef=200
+
+| Selectivity | RBAC-HNSW | Post-filter | Brute-force |
+|-------------|:---------:|:-----------:|:-----------:|
+| open (40%)  | 166 QPS   | 166 QPS     | 3,340 QPS   |
+| medium (2%) | 18 QPS    | 18 QPS      | 37,048 QPS  |
+| restricted  | 10 QPS    | 9.9 QPS     | 61,061 QPS  |
+| strict      | 10 QPS    | 9.9 QPS     | 91,037 QPS  |
+| ultra (0%)  | **8,597 QPS** | 5,893 QPS | 1.9M QPS |
+
+> **Note on Python QPS**: These numbers reflect the Python implementation with
+> per-candidate filter callback overhead. The C++ implementation in
+> [`include/rbac_hnsw.hpp`](include/rbac_hnsw.hpp) achieves 1–2 orders of
+> magnitude higher QPS: the bitwise AND gate costs ~1 ns (single instruction)
+> vs. ~5 µs (Python function call). The C++ VLDB evaluation targets ≥ 10k QPS.
+
+### Experiment 3: Memory Overhead (N=1M, d=768, M=16)
 
 | Architecture | Memory | vs. RBAC-HNSW |
-|---|---|---|
-| **RBAC-HNSW (ours)** | **3.33 GB** | **1×** |
+|---|:-:|:-:|
+| **RBAC-HNSW (ours)** | **3.34 GB** | **1×** |
 | SIEVE (8 roles)  | 26.6 GB | 8× |
 | SIEVE (16 roles) | 53.2 GB | 16× |
-| SIEVE (64 roles) | 213 GB  | 64× |
+| SIEVE (32 roles) | 106.5 GB | 32× |
+| SIEVE (64 roles) | 213.0 GB | 64× |
 
-The RBAC bitmask adds **0.24 % memory overhead** over vanilla HNSW —
-negligible compared to the multi-index overhead of competitor systems.
+Empirical RSS delta (N=100k): RBAC-HNSW = **+339.1 MiB** vs. vanilla HNSW = +338.8 MiB.
+The RBAC bitmask adds **0.24 % memory overhead** over vanilla HNSW.
 
 ---
 

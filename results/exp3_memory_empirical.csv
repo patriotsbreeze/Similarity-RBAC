@@ -1,0 +1,5 @@
+method,n_vectors,dim,rss_delta_mib,rss_total_mib
+PreFilter (brute-force),100000,768,294.5,701.3
+"PostFilter (HNSW, no masks)",100000,768,338.8,745.5
+"RBAC-HNSW (M=16, our method)",100000,768,339.1,745.8
+"RBAC-HNSW (M=32, higher recall)",100000,768,350.2,758.0
