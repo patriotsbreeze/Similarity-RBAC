@@ -1,0 +1,143 @@
+% ============================================================
+%  RBAC-HNSW: Access-Controlled Vector Search
+%  BioDMS @ VLDB 2026 — Project Talk Submission (4 pages)
+%
+%  Format: PVLDB Volume 19 / acmart sigconf
+%  Compiled with: pdflatex → bibtex → pdflatex × 2
+% ============================================================
+\documentclass[sigconf,nonacm]{acmart}
+
+% ── Suppress ACM boilerplate for workshop submission ──────────────────────────
+\settopmatter{printacmref=false}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{balance}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=blue!70!black,
+  urlcolor=blue!70!black,
+}
+
+% ── Metadata ──────────────────────────────────────────────────────────────────
+\title{RBAC-HNSW: Access-Controlled Approximate Nearest-Neighbor Search\\
+       for HIPAA-Governed Clinical Embeddings}
+
+\author{Brendan Loalt}
+\affiliation{%
+  \institution{Independent Researcher}
+  \city{}
+  \country{USA}
+}
+\email{brendanloalt@gmail.com}
+
+% ── Document ──────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Abstract (must precede \maketitle in acmart) ──────────────────────────────
+\input{sections/01_abstract}
+
+% ── Keywords ──────────────────────────────────────────────────────────────────
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10002951.10002952.10003190</concept_id>
+  <concept_desc>Information systems~Database query processing</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010520.10010521.10010542.10010546</concept_id>
+  <concept_desc>Computer systems organization~Database management systems</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Information systems~Database query processing}
+\ccsdesc[300]{Computer systems organization~Database management systems}
+
+\keywords{approximate nearest-neighbor search; HNSW; role-based access control;
+          vector database; clinical informatics; HIPAA; similarity search}
+
+\maketitle
+
+% ── Sections ──────────────────────────────────────────────────────────────────
+\input{sections/02_introduction}
+\input{sections/03_background}
+\input{sections/04_algorithm}
+
+% ── Figures: Algorithm and RBAC schema (placed here for layout) ───────────────
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.92\columnwidth]{figures/fig4_algorithm_diagram.pdf}
+  \caption{RBAC-HNSW graph traversal. Blue nodes are accessible (distance computed);
+           red nodes are denied but still used for routing.}
+  \label{fig:algorithm}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig5_rbac_schema.pdf}
+  \caption{64-bit RBAC bitmask layout encoding a HIPAA hospital access hierarchy
+           (NIST RBAC~\cite{ferraiolo2001proposed}).}
+  \label{fig:rbac_schema}
+\end{figure}
+
+\input{sections/05_dataset}
+\input{sections/06_evaluation}
+
+% ── Figures: Results ─────────────────────────────────────────────────────────
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig1_recall_vs_selectivity.pdf}
+  \caption{Recall@10 vs.\ query selectivity at ef\,=\,100 (left) and ef\,=\,400 (right).
+           RBAC-HNSW ($\bullet$, blue) and post-filtering ($\blacktriangle$, red)
+           achieve near-identical recall because at this dataset scale (50k vectors)
+           the accessible set is easily saturated. At 1M-vector scale, the routing
+           benefit is expected to emerge at selectivity $<\!1\%$.}
+  \label{fig:recall_main}
+\end{figure*}
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig2_recall_ef_curves.pdf}
+  \caption{Recall@10 vs.\ ef beam width across four selectivity levels.
+           At medium--strict selectivity, recall saturates rapidly (both methods
+           achieve $>\!0.98$ at ef\,=\,100) because the accessible set is small
+           and densely clustered relative to the graph structure.}
+  \label{fig:recall_ef}
+\end{figure*}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig3_memory_comparison.pdf}
+  \caption{Theoretical memory footprint for $N\!=\!1$M vectors, $d\!=\!768$, $M\!=\!16$.
+           RBAC-HNSW adds 8~MB (0.24\%) over vanilla HNSW;
+           SIEVE~\cite{zhang2025sieve} requires 8--64$\times$ more for a realistic
+           hospital role hierarchy.}
+  \label{fig:memory}
+\end{figure}
+
+\input{sections/07_conclusion}
+
+% ── References ────────────────────────────────────────────────────────────────
+\balance
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+% ── Authors section (BioDMS requirement) ─────────────────────────────────────
+\input{sections/08_authors}
+
+\end{document}

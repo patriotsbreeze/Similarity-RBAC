@@ -1,0 +1,48 @@
+% ── Section: Dataset ─────────────────────────────────────────────────────────
+\section{Synthetic Clinical Benchmark}
+\label{sec:dataset}
+
+Because real patient records are protected under HIPAA, we construct a
+synthetic benchmark that mathematically models the statistical properties of
+clinical note embeddings and hospital access patterns.
+
+\smallskip
+\noindent\textbf{Embedding distribution.}
+We generate $N$ vectors of dimension $d\!=\!768$ using a 512-centroid Gaussian
+Mixture Model (GMM) calibrated to match BioBERT~\cite{lee2020biobert} cosine
+similarity distributions: intra-cluster mean $\approx\!0.85$ (same
+ICD-10 diagnosis code), inter-cluster mean $\approx\!0.30$ (different codes).
+Centroids are sampled from the unit hypersphere; each vector is $\ell_2$-normalized
+(cosine search $\Leftrightarrow$ inner product on unit vectors).
+The 512 ``diagnosis clusters'' follow a power-law assignment (top-50 codes are
+10$\times$ more common), reflecting the real-world distribution of hospital
+admissions~\cite{lee2020biobert}.
+
+\smallskip
+\noindent\textbf{RBAC bitmask schema.}
+Each vector's 64-bit mask encodes the minimum permissions required to read it,
+following the NIST RBAC standard~\cite{ferraiolo2001proposed}.
+Figure~\ref{fig:rbac_schema} shows the bit layout:
+
+\begin{itemize}[leftmargin=1.4em, itemsep=1pt, topsep=2pt]
+  \item \textbf{Bits 0--7: Department} (8 clinical departments, one set per record).
+  \item \textbf{Bits 8--15: Staff role} (Attending, Resident, Nurse, Researcher, etc.).
+  \item \textbf{Bits 16--23: Data sensitivity} (mental health notes, HIV status,
+        genomic data, substance abuse, trial enrollment, etc.).
+        Probabilities are calibrated to real hospital privacy tier
+        frequencies~\cite{ferraiolo2001proposed}.
+  \item \textbf{Bits 24--31: Patient consent} (8 HIPAA \S164.506 data-use purposes).
+  \item \textbf{Bits 32--39: Research enrollment} (8 concurrent study IDs).
+  \item \textbf{Bits 40--63: Temporal / reserved} (on-call windows, overrides).
+\end{itemize}
+
+\noindent This schema produces five natural \emph{query selectivity} levels:
+``open'' ($\approx\!40\%$ accessible---public summary bit only),
+``medium'' ($\approx\!1.6\%$---department $+$ attending role),
+``restricted'' ($\approx\!0.4\%$---adds billing flag),
+``strict'' ($\approx\!0.02\%$---adds genomic $+$ trial flags), and
+``ultra'' ($<\!0.01\%$---full sensitivity stack).
+Ground-truth nearest neighbors for recall evaluation are computed via
+exhaustive linear scan of the accessible subset (exact).
+The full data generator is open-sourced at
+\url{https://github.com/patriotsbreeze/Similarity-RBAC}.

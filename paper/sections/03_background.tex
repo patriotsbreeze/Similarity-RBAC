@@ -1,0 +1,44 @@
+% ── Section: Background ──────────────────────────────────────────────────────
+\section{Background}
+\label{sec:background}
+
+\noindent\textbf{ANN indexes and HNSW.}
+Approximate nearest-neighbor (ANN) search finds the $k$ most similar vectors
+to a query from a large database, trading a small loss in accuracy for orders
+of magnitude speedup over exhaustive search.
+The current state-of-the-art index is \emph{Hierarchical Navigable Small
+Worlds} (HNSW)~\cite{malkov2020efficient}, a multi-layer proximity graph.
+The top layers provide long-range routing; the bottom layer connects every
+vector to its $M$ nearest neighbors.
+A greedy beam search descends the layers, maintaining a priority queue
+(``beam'') of the $\mathit{ef}$ most promising candidates.
+The dominant cost is the \emph{distance computation}: for 768-dimensional
+float32 vectors, computing cosine similarity requires 768 multiply-accumulate
+operations ($\approx\!30$~ns on modern CPUs).
+Tuning the beam width $\mathit{ef}$ provides a smooth recall--throughput
+trade-off.
+
+\smallskip
+\noindent\textbf{Filtered ANN: prior approaches.}
+FilteredDiskANN~\cite{gollapudi2023filtered} builds per-label entry-point
+structures for efficient multi-label filtered search on disk.
+ACORN~\cite{patel2024acorn} augments each node's neighbor list with additional
+connections to filter-satisfying nodes, maintaining connectivity under arbitrary
+predicates.
+SIEVE~\cite{zhang2025sieve} (VLDB 2025) achieves high recall via $|\text{roles}|$
+separate HNSW indexes, one per access role.
+VBASE~\cite{zhang2023vbase} enables hybrid SQL+vector queries via
+``relaxed monotonicity,'' observing that beam traversal may still make
+progress through filter-failing nodes---an insight we formalize for RBAC.
+
+\smallskip
+\noindent\textbf{RBAC in healthcare.}
+Role-Based Access Control~\cite{ferraiolo2001proposed} (NIST standard)
+assigns users to \emph{roles}, each role carrying a set of \emph{permissions}.
+In HIPAA-governed systems, roles encode department membership, clinical
+function, data sensitivity categories (e.g., mental health, HIV status,
+genomic data), patient consent flags, and research enrollment.
+A single 64-bit bitmask can represent any conjunctive subset of these
+attributes (Section~\ref{sec:dataset}), enabling the gate check
+$(\mathit{node\_mask} \;\&\; \mathit{query\_mask}) = \mathit{query\_mask}$
+as a single bitwise AND instruction.

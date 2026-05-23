@@ -1,0 +1,32 @@
+% ── Section: Abstract ────────────────────────────────────────────────────────
+\begin{abstract}
+Modern clinical AI systems store millions of high-dimensional vector
+embeddings of patient records and must answer similarity search queries
+in real time---while strictly enforcing fine-grained access control
+policies mandated by regulations such as HIPAA.
+Today, no vector database index handles this requirement efficiently
+across the full spectrum of \emph{query selectivity}: the fraction of the
+database a given user is permitted to see.
+Post-filtering (retrieve candidates, then discard unauthorized results)
+collapses to near-zero recall when access is restricted to $\leq 1\%$
+of records.
+Brute-force pre-filtering achieves exact results but degrades to
+single-digit queries per second at broad access levels.
+Multi-index architectures consume 8--64$\times$ more memory for realistic
+role hierarchies.
+
+We present \textbf{RBAC-HNSW}: a single modification to the
+Hierarchical Navigable Small World (HNSW) graph-search algorithm that
+enforces Role-Based Access Control (RBAC) at the node level, before the
+expensive distance computation, while \emph{routing through} denied nodes
+to preserve graph connectivity.
+A 64-bit bitmask co-located with each vector adds only 0.24\% memory
+overhead and costs $\approx\!1$ CPU cycle per access check.
+On a 50{,}000-vector synthetic clinical dataset (BioBERT-scale,
+768-dimensional), RBAC-HNSW achieves $\geq 0.90$ recall@10 across all
+tested selectivity levels (0.02\%--40\%) and adds negligible memory
+compared with the best multi-index competitor.
+This paper presents the algorithm, a realistic HIPAA-motivated bitmask
+schema for hospital access hierarchies, and an empirical evaluation
+targeting the data-management community.
+\end{abstract}

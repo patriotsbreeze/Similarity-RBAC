@@ -1,178 +1,96 @@
-% ─────────────────────────────────────────────────────────────────────────────
-% RBAC-HNSW: Role-Based Access Control for Approximate Nearest-Neighbor Search
-% Reference list — literature foundation for the VLDB submission
-% ─────────────────────────────────────────────────────────────────────────────
-
-% ── HNSW (the base algorithm we modify) ──────────────────────────────────────
-@article{malkov2018efficient,
-  title     = {Efficient and robust approximate nearest neighbor search using
-               Hierarchical Navigable Small World graphs},
-  author    = {Malkov, Yury A. and Yashunin, Dmitry A.},
-  journal   = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
-  volume    = {42},
-  number    = {4},
-  pages     = {824--836},
-  year      = {2020},
-  publisher = {IEEE},
-  doi       = {10.1109/TPAMI.2018.2889473},
-  note      = {Introduces the two-phase HNSW graph: a long-range routing layer
-               and a dense proximity layer. We extend the greedy search
-               heuristic with RBAC bitmask checks (Section~3.2).}
+@article{malkov2020efficient,
+  author  = {Malkov, Yury A. and Yashunin, Dmitry A.},
+  title   = {Efficient and Robust Approximate Nearest Neighbor Search Using
+             {Hierarchical Navigable Small World} Graphs},
+  journal = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume  = {42},
+  number  = {4},
+  pages   = {824--836},
+  year    = {2020},
+  doi     = {10.1109/TPAMI.2018.2889473},
 }
 
-% ── ACORN: Filtered HNSW via predicate-aware graph augmentation ──────────────
 @inproceedings{patel2024acorn,
+  author    = {Patel, Liana and Kraft, Peter and Guestrin, Carlos and Zaharia, Matei},
   title     = {{ACORN}: Performant and Predicate-Agnostic Search Over Vector
                Embeddings and Structured Data},
-  author    = {Patel, Liana and Kraft, Peter and Guestrin, Carlos and
-               Zaharia, Matei},
   booktitle = {Proceedings of the ACM on Management of Data (SIGMOD)},
   volume    = {2},
   number    = {3},
   year      = {2024},
   doi       = {10.1145/3654923},
-  note      = {ACORN augments each HNSW node with a predicate-aware neighbor
-               list, re-routing around filtered nodes. Our bitmask approach
-               avoids the overhead of maintaining duplicate neighbor lists by
-               re-using existing edges for routing even when a node is
-               access-denied (Section~3.3).}
 }
 
-% ── FilteredVamana / NHQ ─────────────────────────────────────────────────────
 @inproceedings{gollapudi2023filtered,
-  title     = {Filtered-{DiskANN}: Graph Algorithms for Approximate Nearest
-               Neighbor Search with Filters},
   author    = {Gollapudi, Siddharth and Karia, Neel and Siber, Varun and
                Krishnaswamy, Rohan and others},
+  title     = {Filtered-{DiskANN}: Graph Algorithms for Approximate Nearest
+               Neighbor Search with Filters},
   booktitle = {Proceedings of The Web Conference (WWW)},
   pages     = {3406--3416},
   year      = {2023},
   doi       = {10.1145/3543507.3583552},
-  note      = {FilteredDiskANN (FilteredVamana) builds separate entry-point
-               structures per label. RBAC-HNSW avoids multi-index memory
-               overhead by storing a single 64-bit mask per node
-               (Section~4.1).}
 }
 
-% ── SIEVE (VLDB 2025) — the key competitor ────────────────────────────────────
 @inproceedings{zhang2025sieve,
+  author    = {Zhang, Yifan and Gao, Yifan and Ma, Lin and others},
   title     = {{SIEVE}: An Efficient and Accurate Multi-Index Approach to
                Filtered Approximate Nearest Neighbor Search},
-  author    = {Zhang, Yifan and Gao, Yifan and Ma, Lin and others},
   booktitle = {Proceedings of the VLDB Endowment},
   volume    = {18},
   number    = {5},
   year      = {2025},
-  note      = {SIEVE maintains O(|labels|) separate HNSW indexes. Our
-               single-index design achieves comparable recall while reducing
-               memory to O(1) extra bytes per vector (Section~5.2).}
 }
 
-% ── VBASE / SeRF: relaxed monotonicity ───────────────────────────────────────
 @inproceedings{zhang2023vbase,
-  title     = {{VBASE}: Unifying Online Vector Similarity Search and Relational
-               Queries via Relaxed Monotonicity},
   author    = {Zhang, Qianxi and Xu, Shuotao and Chen, Qi and Sui, Guoxin and
                Xie, Jiadong and Cai, Zhizhen and others},
-  booktitle = {Proceedings of the 17th USENIX Symposium on Operating Systems
-               Design and Implementation (OSDI)},
+  title     = {{VBASE}: Unifying Online Vector Similarity Search and Relational
+               Queries via Relaxed Monotonicity},
+  booktitle = {17th USENIX Symposium on Operating Systems Design and
+               Implementation (OSDI)},
   pages     = {377--395},
   year      = {2023},
-  note      = {Introduces relaxed monotonicity to enable hybrid structured +
-               vector queries. Motivates our use of graph edges for routing
-               through access-denied nodes rather than full pruning.}
 }
 
-% ── NHQ: graph-based filtering via navigating spreading-out graph ─────────────
-@inproceedings{wang2021comprehensive,
-  title     = {A Comprehensive Study and Comparison of Core Techniques for
-               Approximate Nearest Neighbor Search},
-  author    = {Wang, Mengzhao and Xu, Xiaoliang and Yue, Qiang and Wang, Yuxiang},
-  journal   = {IEEE Transactions on Knowledge and Data Engineering},
-  year      = {2023},
-  doi       = {10.1109/TKDE.2021.3131612},
-  note      = {Survey of ANN algorithms. Provides the QPS/recall trade-off
-               framework we adopt in Section~5.1 of our evaluation.}
-}
-
-% ── BioBERT (motivates 768-dim embeddings) ────────────────────────────────────
 @article{lee2020biobert,
-  title     = {{BioBERT}: a pre-trained biomedical language representation
-               model for biomedical text mining},
-  author    = {Lee, Jinhyuk and Yoon, Wonjin and Kim, Suho and Kim, Donghyeon
-               and Kim, Sungdong and So, Chan Ho and Kang, Jaewoo},
-  journal   = {Bioinformatics},
-  volume    = {36},
-  number    = {4},
-  pages     = {1234--1240},
-  year      = {2020},
-  publisher = {Oxford University Press},
-  doi       = {10.1093/bioinformatics/btz682},
-  note      = {BioBERT produces 768-dimensional embeddings for clinical notes.
-               We use this dimensionality for our synthetic benchmark
-               (Section~4.2).}
+  author  = {Lee, Jinhyuk and Yoon, Wonjin and Kim, Suho and Kim, Donghyeon
+             and Kim, Sungdong and So, Chan Ho and Kang, Jaewoo},
+  title   = {{BioBERT}: a pre-trained biomedical language representation model
+             for biomedical text mining},
+  journal = {Bioinformatics},
+  volume  = {36},
+  number  = {4},
+  pages   = {1234--1240},
+  year    = {2020},
+  doi     = {10.1093/bioinformatics/btz682},
 }
 
-% ── HIPAA / RBAC motivation ───────────────────────────────────────────────────
 @article{ferraiolo2001proposed,
-  title     = {Proposed {NIST} Standard for Role-Based Access Control},
-  author    = {Ferraiolo, David F. and Sandhu, Ravi and Gavrila, Serban and
-               Kuhn, D. Richard and Chandramouli, Ramaswamy},
-  journal   = {ACM Transactions on Information and System Security (TISSEC)},
-  volume    = {4},
-  number    = {3},
-  pages     = {224--274},
-  year      = {2001},
-  doi       = {10.1145/501978.501980},
-  note      = {The NIST RBAC standard. Justifies bitmask encoding of role
-               hierarchies (Section~3.1) and the hospital department model
-               used in Section~4.2.}
+  author  = {Ferraiolo, David F. and Sandhu, Ravi and Gavrila, Serban and
+             Kuhn, D. Richard and Chandramouli, Ramaswamy},
+  title   = {Proposed {NIST} Standard for Role-Based Access Control},
+  journal = {ACM Transactions on Information and System Security (TISSEC)},
+  volume  = {4},
+  number  = {3},
+  pages   = {224--274},
+  year    = {2001},
+  doi     = {10.1145/501978.501980},
 }
 
-% ── ScaNN: product quantization ANN ──────────────────────────────────────────
-@inproceedings{guo2020accelerating,
-  title     = {Accelerating Large-Scale Inference with Anisotropic Vector
-               Quantization},
-  author    = {Guo, Ruiqi and Sun, Philip and Lindgren, Erik and Geng, Quan
-               and Simcha, David and Chern, Felix and Kumar, Sanjiv},
-  booktitle = {International Conference on Machine Learning (ICML)},
-  year      = {2020},
-  note      = {ScaNN establishes QPS benchmarks used as context for our
-               throughput results in Section~5.3.}
-}
-
-% ── CPU cache-line optimization reference ─────────────────────────────────────
 @book{drepper2007every,
-  title     = {What Every Programmer Should Know About Memory},
   author    = {Drepper, Ulrich},
+  title     = {What Every Programmer Should Know About Memory},
   year      = {2007},
   publisher = {Red Hat, Inc.},
-  note      = {Cache-line layout analysis. Motivates co-locating
-               \texttt{rbac\_mask} with the vector pointer within a 64-byte
-               cache line (Section~5.4).}
 }
 
-% ── AVX-512 bitwise operations ────────────────────────────────────────────────
-@inproceedings{hofmann2014simd,
-  title     = {{SIMD} Matters: Evaluating and Exploiting {AVX}-512 for Database
-               Operators},
-  author    = {Hofmann, Johannes and Fey, D. and Riedmann, Markus and
-               Eitzinger, Jan and Treibig, Georg and Hager, Georg},
-  booktitle = {Euro-Par 2014 Parallel Processing},
-  year      = {2014},
-  note      = {AVX-512 intrinsics for parallel bitwise operations. Applied in
-               Section~5.5 when extending to multi-word RBAC masks.}
-}
-
-% ── ANN Benchmarks ────────────────────────────────────────────────────────────
 @inproceedings{aumuller2020ann,
+  author    = {Aum{\"u}ller, Martin and Bernhardsson, Erik and Faithfull, Alexander},
   title     = {{ANN}-Benchmarks: A Benchmarking Tool for Approximate Nearest
                Neighbor Algorithms},
-  author    = {Aum{\"u}ller, Martin and Bernhardsson, Erik and Faithfull, Alexander},
   booktitle = {Information Systems},
   volume    = {87},
   year      = {2020},
   doi       = {10.1016/j.is.2019.02.006},
-  note      = {Benchmark methodology for recall@k and QPS evaluation. We
-               follow their protocol in Section~5.1.}
 }

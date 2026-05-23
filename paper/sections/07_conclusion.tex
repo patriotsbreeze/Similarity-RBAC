@@ -1,0 +1,31 @@
+% ── Section: Conclusion ──────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented RBAC-HNSW, an algorithm for access-controlled approximate
+nearest-neighbor search that enforces HIPAA-grade RBAC at the node level
+without rebuilding the index per role and without the recall degradation of
+post-filtering at low selectivity.
+The core modification---routing through access-denied nodes while skipping
+their distance computation---adds 0.24\% memory overhead and $\approx\!1$~CPU
+cycle per candidate, and achieves $\geq\!0.90$ recall@10 across a 2{,}000$\times$
+selectivity range on a synthetic clinical benchmark.
+
+We believe this problem is of direct relevance to the biomedical data
+management community: as vector-based retrieval permeates clinical workflows,
+the infrastructure must enforce the fine-grained access policies that protect
+patient privacy.
+Framing this as a \emph{database systems problem}---an index-level modification
+rather than an application-layer filter---opens new research directions in
+privacy-aware data structures, dynamic RBAC maintenance, and secure multi-tenant
+vector databases.
+
+\smallskip
+\noindent\textbf{Open problems.}
+(1) Extending to $n$-ary RBAC predicates (e.g., ``Oncology OR Neurology''),
+which breaks the simple bitmask subset check.
+(2) Federated settings where the access policy itself is encrypted
+(attribute-based encryption).
+(3) Empirical evaluation at 10M+ scale on real de-identified clinical corpora.
+We welcome collaboration with the biomedical informatics community on these
+directions.

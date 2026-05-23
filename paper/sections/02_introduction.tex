@@ -1,0 +1,74 @@
+% ── Section: Introduction ─────────────────────────────────────────────────────
+\section{Introduction}
+\label{sec:intro}
+
+The deployment of transformer-based language models in clinical medicine
+has produced a new class of infrastructure challenge: \emph{access-controlled
+approximate nearest-neighbor (ANN) search} over protected health information
+(PHI).
+Consider a hospital AI system that helps clinicians find similar past cases.
+The system stores BioBERT~\cite{lee2020biobert} embeddings of one million
+clinical notes (768-dimensional float vectors) and must answer each query
+in under 10 milliseconds.
+Crucially, every query result must satisfy the Health Insurance Portability
+and Accountability Act (HIPAA): an Oncology physician must not see Psychiatry
+notes; a researcher may access only records with explicit consent for their
+specific study.
+
+\smallskip
+\noindent\textbf{The selectivity problem.}
+In Role-Based Access Control (RBAC)~\cite{ferraiolo2001proposed}, each user
+holds a \emph{permission mask} that determines which records they may read.
+The \emph{selectivity} of a query is the fraction of the database accessible
+to the querying user.
+In a realistic hospital, selectivity varies from $\approx\!80\%$ (senior
+administrator with broad access) down to $\approx\!0.1\%$ (researcher querying
+genomic data from HIV-positive trial participants).
+No existing ANN index handles this full range efficiently:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
+  \item \textbf{Post-filtering.}
+    Standard HNSW retrieves a candidate set and filters by access mask.
+    At 0.1\% selectivity, only $\approx\!1{,}000$ of $1{,}000{,}000$ records
+    are accessible; a beam of width $\mathit{ef}\!=\!200$ explores far too
+    few nodes to reach 10 accessible results reliably---recall collapses
+    toward zero~\cite{malkov2020efficient}.
+
+  \item \textbf{Pre-filtering (brute-force).}
+    Build the accessible subset on-the-fly and scan it exhaustively.
+    Exact results, but $O(|\text{accessible}| \times d)$ work per query:
+    at 40\% selectivity over one million vectors, this reduces throughput
+    to single-digit queries per second (QPS)~\cite{gollapudi2023filtered}.
+
+  \item \textbf{Multi-index architectures (e.g., SIEVE~\cite{zhang2025sieve}).}
+    Maintain one HNSW index per role.
+    Good recall and throughput, but memory scales with $|\text{roles}|$:
+    64 roles $\Rightarrow$ 64$\times$ the baseline index footprint
+    ($\approx\!213$~GB for one million 768-dim vectors; Section~\ref{sec:eval}).
+\end{itemize}
+
+\smallskip
+\noindent\textbf{Our contribution: RBAC-HNSW.}
+We present a \emph{single algorithmic modification} to the HNSW greedy
+search that gates on a 64-bit bitmask before computing the vector distance.
+Denied nodes are not pruned from graph traversal---their neighbor lists are
+still used to \emph{route} the beam toward accessible regions---preventing
+the ``connectivity deserts'' that cause post-filtering recall to collapse.
+
+Concretely, the access check
+$(\mathit{node\_mask} \;\&\; \mathit{query\_mask}) = \mathit{query\_mask}$
+costs one CPU instruction ($\approx\!1$~ns) and is evaluated before the
+$768$-multiply cosine distance ($\approx\!30$~ns).
+The mask is stored inline with each HNSW node pointer, fitting both in a
+single 64-byte CPU cache line~\cite{drepper2007every}.
+Memory overhead: $8$~bytes per vector $=$ \textbf{0.24\%} above vanilla HNSW.
+
+\smallskip
+\noindent\textbf{Scope of this paper.}
+This work targets the \emph{data management community}, framing access-controlled
+vector search as a database systems problem.
+We present the algorithm (Section~\ref{sec:algorithm}), a biologically motivated
+evaluation dataset (Section~\ref{sec:dataset}), and empirical results across
+five selectivity levels (Section~\ref{sec:eval}).
+Our open-source implementation is available at
+\url{https://github.com/patriotsbreeze/Similarity-RBAC}.
