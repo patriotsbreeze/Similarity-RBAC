@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Data (large files — regenerate with data_generator.py)
+data/
+*.npy
+*.npz
+
+# C++ build artifacts
+build/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results CSVs and plots are tracked (small, reproducible)
+# Uncomment to exclude:
+# results/
