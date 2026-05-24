@@ -58,128 +58,181 @@ COLORS = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fig 1: Side-by-side traversal comparison (NEW — addresses reviewer comment)
+# Fig 1: Side-by-side traversal comparison
 # Left:  Vanilla post-filtering gets STUCK in denied region
 # Right: RBAC-HNSW routes through denied nodes to reach accessible cluster
 # ─────────────────────────────────────────────────────────────────────────────
 def fig1_traversal_comparison():
-    fig, axes = plt.subplots(1, 2, figsize=(W2, 3.0))
+    # ── Shared layout constants ─────────────────────────────────────────────
+    NODE_R  = 0.40          # node circle radius (data units)
+    XLIM    = (0.0, 11.0)
+    YLIM    = (0.0,  8.5)
 
-    def draw_graph(ax, title, scenario):
-        ax.set_xlim(0, 10); ax.set_ylim(0, 10); ax.axis("off")
-        ax.set_facecolor("#FAFAFA")
+    Q_POS  = (0.7, 4.25)
 
-        def node(x, y, color, label, r=0.55, fs=8, alpha=1.0):
-            circ = plt.Circle((x, y), r, color=color, zorder=3, alpha=alpha,
-                               ec="white", lw=1.5)
-            ax.add_patch(circ)
-            ax.text(x, y, label, ha="center", va="center",
-                    fontsize=fs, color="white", fontweight="bold", zorder=4)
+    # 5 denied nodes: D1 = entry, D2/D3 upper/lower, D4/D5 bridge layer
+    DEN = [
+        (2.5, 4.25),   # D1 — first hop from Q
+        (4.0, 6.00),   # D2 — upper branch
+        (4.0, 2.50),   # D3 — lower branch
+        (5.5, 6.00),   # D4 — upper-right; bridge to accessible cluster
+        (5.5, 2.50),   # D5 — lower-right; bridge to accessible cluster
+        (4.0, 4.25),   # D6 — centre
+    ]
 
-        def edge(x1, y1, x2, y2, color="#AAAAAA", lw=1.0, style="-",
-                 alpha=0.7, visited=False):
-            arrow_kw = dict(arrowstyle="->" if visited else "-",
-                            color=color, lw=lw, linestyle=style,
-                            alpha=alpha, mutation_scale=10)
-            ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
-                        arrowprops=arrow_kw, zorder=2)
+    # Accessible cluster — 2.25 unit gaps so no circle overlap (r=0.40, gap>>0.80)
+    ACC = [
+        (8.0, 6.50),   # A1
+        (8.0, 4.25),   # A2
+        (8.0, 2.00),   # A3
+    ]
 
-        # Fixed layout: Q=query, D1-D5=denied, A1-A3=accessible (far cluster)
-        # Post-filter (left): beam exhausts on denied nodes, can't reach A cluster
-        # RBAC-HNSW (right): routes through D nodes to reach A cluster
+    # All graph edges (light-gray background)
+    EDGES = [
+        (Q_POS,   DEN[0]),  # Q  — D1
+        (DEN[0],  DEN[1]),  # D1 — D2
+        (DEN[0],  DEN[2]),  # D1 — D3
+        (DEN[0],  DEN[5]),  # D1 — D6
+        (DEN[1],  DEN[3]),  # D2 — D4
+        (DEN[2],  DEN[4]),  # D3 — D5
+        (DEN[5],  DEN[3]),  # D6 — D4
+        (DEN[5],  DEN[4]),  # D6 — D5
+        (DEN[3],  ACC[0]),  # D4 — A1 ★ bridge
+        (DEN[3],  ACC[1]),  # D4 — A2 ★ bridge
+        (DEN[4],  ACC[1]),  # D5 — A2 ★ bridge
+        (DEN[4],  ACC[2]),  # D5 — A3 ★ bridge
+        (ACC[0],  ACC[1]),  # A1 — A2
+        (ACC[1],  ACC[2]),  # A2 — A3
+    ]
 
-        # Query node (blue, top-left)
-        node(1.5, 8.5, "#1565C0", "Q", r=0.55)
+    # Routing path highlighted in panel (b)
+    ROUTE = [
+        (Q_POS,  DEN[0]),
+        (DEN[0], DEN[1]),
+        (DEN[1], DEN[3]),
+        (DEN[3], ACC[0]),
+        (DEN[3], ACC[1]),
+    ]
 
-        # Dense denied region (red) — beam entry zone
-        denied = [(3.5, 8.5), (5.0, 9.0), (5.0, 7.5),
-                  (6.5, 8.5), (6.5, 6.8), (4.0, 6.5)]
-        for i, (x, y) in enumerate(denied):
-            node(x, y, "#C62828", f"D{i+1}", r=0.5, fs=7.5)
+    def draw_arrow(ax, p1, p2, color, lw, style="-", alpha=1.0):
+        """Arrow from p1 to p2, endpoints pulled back to node border."""
+        dx, dy = p2[0]-p1[0], p2[1]-p1[1]
+        dist   = np.hypot(dx, dy)
+        if dist < 1e-9: return
+        ux, uy = dx/dist, dy/dist
+        xs = p1[0] + NODE_R * ux
+        ys = p1[1] + NODE_R * uy
+        xe = p2[0] - NODE_R * ux
+        ye = p2[1] - NODE_R * uy
+        ax.annotate("", xy=(xe, ye), xytext=(xs, ys),
+                    arrowprops=dict(arrowstyle="->", color=color, lw=lw,
+                                   linestyle=style, alpha=alpha,
+                                   mutation_scale=9),
+                    zorder=2)
 
-        # Accessible cluster (blue, far right)
-        acc = [(8.5, 9.2), (8.5, 7.8), (8.0, 8.5)]
-        for i, (x, y) in enumerate(acc):
-            node(x, y, "#1565C0", f"A{i+1}", r=0.5, fs=7.5)
+    def draw_plain_edge(ax, p1, p2, color="#C8C8C8", lw=0.9, alpha=0.8):
+        ax.plot([p1[0], p2[0]], [p1[1], p2[1]],
+                color=color, lw=lw, alpha=alpha, zorder=1,
+                solid_capstyle="round")
 
-        # Edges Q → denied region
-        edge(2.0, 8.5, 3.0, 8.5, "#AAAAAA")
-        # Edges within denied region
-        edge(4.0, 8.5, 4.5, 9.0, "#AAAAAA")
-        edge(4.0, 8.5, 4.5, 7.5, "#AAAAAA")
-        edge(5.5, 9.0, 6.0, 8.5, "#AAAAAA")
-        edge(5.5, 7.5, 6.0, 8.5, "#AAAAAA")
-        edge(5.5, 7.5, 6.0, 6.8, "#AAAAAA")
-        edge(4.5, 8.5, 4.0, 6.5, "#AAAAAA")
-        # Edges denied → accessible (the routing bridge)
-        edge(7.0, 8.5, 8.0, 9.2, "#AAAAAA")
-        edge(7.0, 8.5, 8.0, 7.8, "#AAAAAA")
-        edge(8.0, 9.2, 8.0, 8.5, "#AAAAAA")
-        edge(8.0, 7.8, 8.0, 8.5, "#AAAAAA")
+    def draw_node(ax, pos, color, label, alpha=1.0, ec="white", ls="-"):
+        circ = plt.Circle(pos, NODE_R, color=color, zorder=3,
+                          alpha=alpha, ec=ec, lw=1.3, ls=ls)
+        ax.add_patch(circ)
+        ax.text(pos[0], pos[1], label, ha="center", va="center",
+                fontsize=7, color="white" if alpha > 0.4 else color,
+                fontweight="bold", zorder=4, alpha=alpha)
 
+    # ── Draw both panels ───────────────────────────────────────────────────
+    fig, axes = plt.subplots(1, 2, figsize=(W2, 3.2))
+
+    for ax, scenario in zip(axes, ("stuck", "routing")):
+        ax.set_xlim(*XLIM); ax.set_ylim(*YLIM); ax.axis("off")
+        ax.set_facecolor("#F9F9F9")
+
+        # Background edges
+        for e in EDGES:
+            draw_plain_edge(ax, e[0], e[1])
+
+        # Routing arrows (panel b only)
+        if scenario == "routing":
+            for e in ROUTE:
+                draw_arrow(ax, e[0], e[1], color=COLORS["rbac"],
+                           lw=2.2, style=(0, (5, 2)), alpha=0.95)
+
+        # Beam-frontier halos on denied nodes (panel a)
         if scenario == "stuck":
-            # Post-filtering: beam fills up on D nodes, never reaches A
-            # Show beam frontier stuck on denied nodes
-            for x, y in denied[:4]:
-                halo = plt.Circle((x, y), 0.72, color="#FF5252",
-                                  alpha=0.18, zorder=2)
-                ax.add_patch(halo)
-            ax.text(5.0, 5.2, "!! Beam exhausted\n   in denied region",
-                    ha="center", fontsize=8, color="#C62828",
-                    style="italic",
+            for pos in DEN[:4]:
+                ax.add_patch(plt.Circle(pos, NODE_R + 0.24,
+                                        color="#FF5252", alpha=0.14, zorder=2))
+
+        # Denied nodes
+        for i, pos in enumerate(DEN):
+            draw_node(ax, pos, "#C62828", f"D{i+1}")
+
+        # Accessible nodes — faded (a) vs highlighted (b)
+        for i, pos in enumerate(ACC):
+            if scenario == "stuck":
+                # Faded — beam never arrived here
+                draw_node(ax, pos, "#1565C0", f"A{i+1}",
+                          alpha=0.22, ec="#1565C0", ls="--")
+            else:
+                # Found — draw halo then node
+                ax.add_patch(plt.Circle(pos, NODE_R + 0.26,
+                                        color=COLORS["rbac"], alpha=0.18, zorder=2))
+                draw_node(ax, pos, COLORS["rbac"], f"A{i+1}")
+                # Small badge to the right of each node — well clear of the node
+                badge = plt.Circle((pos[0] + NODE_R + 0.38, pos[1]),
+                                   0.28, color="#2E7D32", zorder=5, ec="white", lw=0.8)
+                ax.add_patch(badge)
+                ax.text(pos[0] + NODE_R + 0.38, pos[1],
+                        "+", ha="center", va="center", fontsize=8,
+                        color="white", fontweight="bold", zorder=6)
+
+        # Query node (on top of everything)
+        ax.add_patch(plt.Circle(Q_POS, NODE_R + 0.06,
+                                color=COLORS["rbac"], alpha=0.25, zorder=3))
+        draw_node(ax, Q_POS, COLORS["rbac"], "Q")
+
+        # Annotation box at bottom
+        if scenario == "stuck":
+            # Single "not reached" label near accessible cluster, not above nodes
+            ax.text(8.0, 0.55,
+                    "Not reached —\nbeam exhausted",
+                    ha="center", va="bottom", fontsize=7.5,
+                    color="#B71C1C", style="italic",
                     bbox=dict(boxstyle="round,pad=0.3", fc="#FFEBEE",
-                              ec="#C62828", alpha=0.9))
-            # X marks on accessible nodes
-            for x, y in acc:
-                ax.text(x, y + 0.8, "X", ha="center", fontsize=9,
-                        color="#C62828", fontweight="bold", zorder=5,
-                        family="DejaVu Sans")
-
-        else:  # routing
-            # RBAC-HNSW: beam routes through D nodes (dotted traversal arrows)
-            route_edges = [
-                (2.0, 8.5, 3.0, 8.5),
-                (4.0, 8.5, 4.5, 9.0),
-                (5.5, 9.0, 6.0, 8.5),
-                (7.0, 8.5, 8.0, 9.2),   # bridge!
-                (7.0, 8.5, 8.0, 7.8),
-            ]
-            for x1, y1, x2, y2 in route_edges:
-                edge(x1, y1, x2, y2, color="#1565C0", lw=2.0,
-                     style=(0, (4, 2)), visited=True, alpha=0.9)
-            # Highlight accessible nodes as found
-            for x, y in acc:
-                halo = plt.Circle((x, y), 0.72, color="#1565C0",
-                                  alpha=0.2, zorder=2)
-                ax.add_patch(halo)
-                ax.text(x, y + 0.8, "OK", ha="center", fontsize=8,
-                        color="#2E7D32", fontweight="bold", zorder=5,
-                        family="DejaVu Sans")
-            ax.text(5.0, 5.2, "Routing through D nodes\n   → reaches A cluster",
-                    ha="center", fontsize=8, color="#1565C0", style="italic",
+                              ec="#C62828", lw=0.9, alpha=0.95), zorder=5)
+            ax.text(4.0, 0.55,
+                    "!! Beam budget exhausted\n      in denied region",
+                    ha="center", va="bottom", fontsize=7.5,
+                    color="#B71C1C", style="italic",
+                    bbox=dict(boxstyle="round,pad=0.3", fc="#FFEBEE",
+                              ec="#C62828", lw=0.9, alpha=0.95), zorder=5)
+        else:
+            ax.text(5.8, 0.55,
+                    "Routes through denied nodes\n       → accessible cluster found",
+                    ha="center", va="bottom", fontsize=7.5,
+                    color="#0D47A1", style="italic",
                     bbox=dict(boxstyle="round,pad=0.3", fc="#E3F2FD",
-                              ec="#1565C0", alpha=0.9))
+                              ec="#1565C0", lw=0.9, alpha=0.95), zorder=5)
 
+        title = ("(a) Vanilla Post-filtering:\nBeam stuck in denied region"
+                 if scenario == "stuck"
+                 else "(b) RBAC-HNSW:\nRouting through denied nodes")
         ax.set_title(title, fontweight="bold", fontsize=9, pad=4)
 
-    draw_graph(axes[0],
-               "(a) Vanilla Post-filtering:\nBeam stuck in denied region",
-               "stuck")
-    draw_graph(axes[1],
-               "(b) RBAC-HNSW:\nRouting through denied nodes",
-               "routing")
-
     # Shared legend
-    p_acc  = mpatches.Patch(color="#1565C0", label="Accessible node")
-    p_den  = mpatches.Patch(color="#C62828", label="Access-denied node")
-    p_route = mpatches.Patch(color="#1565C0", alpha=0.4,
+    p_acc   = mpatches.Patch(color=COLORS["rbac"], label="Accessible node")
+    p_den   = mpatches.Patch(color="#C62828",       label="Access-denied node")
+    p_route = mpatches.Patch(color=COLORS["rbac"], alpha=0.45,
                               label="Routing traversal (no distance computed)")
     fig.legend(handles=[p_acc, p_den, p_route], loc="lower center",
-               ncol=3, fontsize=8, bbox_to_anchor=(0.5, -0.04),
+               ncol=3, fontsize=7.5, bbox_to_anchor=(0.5, -0.03),
                frameon=True, framealpha=0.95)
     fig.suptitle("Why RBAC-HNSW Outperforms Post-Filtering at Low Selectivity",
                  fontweight="bold", fontsize=9.5, y=1.01)
-    fig.tight_layout(w_pad=2)
+    fig.tight_layout(w_pad=2.5)
     _save(fig, "fig1_traversal_comparison")
 
 
