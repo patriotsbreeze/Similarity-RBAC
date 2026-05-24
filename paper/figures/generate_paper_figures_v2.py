@@ -286,30 +286,16 @@ def fig2_qps_vs_recall():
     pcts = {"open": "~40%", "medium": "~1.6%",
             "restricted": "~0.4%", "strict": "~0.02%"}
 
-    # Taller figure gives room for labels; each panel gets more vertical space
     fig, axes = plt.subplots(1, len(sel_names),
-                             figsize=(W2, 3.0), sharey=False)
+                             figsize=(W2, 3.1), sharey=False)
     if len(sel_names) == 1: axes = [axes]
 
-    # Per-method annotation offsets for ef=first (low recall end) and
-    # ef=last (high recall end), chosen to keep labels away from each other.
-    # Format: (xytext_first, xytext_last)
-    offsets = {
-        "RBAC-HNSW":   ((-4, 6),   (4, -10)),   # ef=low → above-left; ef=high → below-right
-        "Post-filter": ((4,  6),   (-38, -10)),  # ef=low → above-right; ef=high → below-left
-    }
+    label_box = dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.82)
+    arrow_kw  = dict(arrowstyle="-", lw=0.7, shrinkA=3, shrinkB=3)
 
-    label_kw = dict(
-        textcoords="offset points",
-        fontsize=6,
-        fontweight="bold",
-        bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.75),
-    )
-
-    for ax, sel in zip(axes, sel_names):
+    for idx, (ax, sel) in enumerate(zip(axes, sel_names)):
         sub = df[df["selectivity_name"] == sel]
 
-        # Draw curves first
         for method, color, marker, lw in [
             ("RBAC-HNSW",   COLORS["rbac"], "o", 2.0),
             ("Post-filter", COLORS["post"], "^", 1.8),
@@ -317,43 +303,71 @@ def fig2_qps_vs_recall():
             m = sub[sub["method"] == method].sort_values("recall_at_10")
             if m.empty: continue
             ax.plot(m["recall_at_10"], m["qps"],
-                    color=color, marker=marker, label=method,
+                    color=color, marker=marker,
                     linewidth=lw, markersize=4.5, zorder=3)
 
-        # Annotate ef labels after both curves drawn (avoids z-order issues)
-        for method, color, marker, lw in [
-            ("RBAC-HNSW",   COLORS["rbac"], "o", 2.0),
-            ("Post-filter", COLORS["post"], "^", 1.8),
-        ]:
-            m = sub[sub["method"] == method].sort_values("recall_at_10")
-            if len(m) < 2: continue
-            xy_first = offsets[method][0]
-            xy_last  = offsets[method][1]
-            first_row = m.iloc[0]
-            last_row  = m.iloc[-1]
-            ax.annotate(f"ef={int(first_row['ef'])}",
-                        (first_row["recall_at_10"], first_row["qps"]),
-                        xytext=xy_first, color=color, **label_kw)
-            ax.annotate(f"ef={int(last_row['ef'])}",
-                        (last_row["recall_at_10"], last_row["qps"]),
-                        xytext=xy_last, color=color, **label_kw)
+        # ── ef labels: FIRST PANEL ONLY, anchored to fixed axes corners ────
+        # This keeps labels in the same visual corner on every panel and
+        # avoids the "ef=800 in a different place each time" problem.
+        # Readers apply the ef direction to all other panels.
+        if idx == 0:
+            for method, color in [("RBAC-HNSW", COLORS["rbac"]),
+                                   ("Post-filter", COLORS["post"])]:
+                m = sub[sub["method"] == method].sort_values("recall_at_10")
+                if len(m) < 2: continue
+                first, last = m.iloc[0], m.iloc[-1]
+
+                # ef=10 → label pinned to upper-left/upper-right corner of axes
+                ax.annotate(
+                    f"ef=10",
+                    xy=(first["recall_at_10"], first["qps"]),
+                    xycoords="data",
+                    xytext=(0.02 if method == "RBAC-HNSW" else 0.55, 0.97),
+                    textcoords="axes fraction",
+                    fontsize=6.5, fontweight="bold", color=color,
+                    va="top", ha="left",
+                    bbox=label_box,
+                    arrowprops={**arrow_kw, "color": color},
+                    zorder=5,
+                )
+                # ef=800 → label pinned to lower region of axes
+                ax.annotate(
+                    f"ef=800",
+                    xy=(last["recall_at_10"], last["qps"]),
+                    xycoords="data",
+                    xytext=(0.02 if method == "RBAC-HNSW" else 0.55, 0.18),
+                    textcoords="axes fraction",
+                    fontsize=6.5, fontweight="bold", color=color,
+                    va="top", ha="left",
+                    bbox=label_box,
+                    arrowprops={**arrow_kw, "color": color},
+                    zorder=5,
+                )
 
         ax.set_xlabel("Recall@10", fontsize=8)
-        ax.set_ylabel("QPS" if ax is axes[0] else "", fontsize=8)
+        ax.set_ylabel("QPS", fontsize=8)
         ax.set_title(f"{sel}\n({pcts.get(sel,'')})", fontsize=8.5,
                      fontweight="bold", pad=3)
         ax.set_xlim(-0.03, 1.08)
         ax.set_yscale("log")
         ax.tick_params(labelsize=7.5)
-        # Padding inside axes so labels don't clip
-        ax.margins(y=0.15)
+        ax.margins(y=0.12)
 
-    # Single legend in first panel, bottom-right
-    axes[0].legend(fontsize=7.5, loc="lower right",
-                   framealpha=0.9, edgecolor="#CCCCCC")
+    # ── Legend BELOW all panels so it never overlaps any data ───────────────
+    legend_handles = [
+        plt.Line2D([0], [0], color=COLORS["rbac"], marker="o",
+                   lw=2.0, ms=5, label="RBAC-HNSW (this work)"),
+        plt.Line2D([0], [0], color=COLORS["post"], marker="^",
+                   lw=1.8, ms=5, label="Post-filter baseline"),
+    ]
+    fig.legend(handles=legend_handles, loc="lower center", ncol=2,
+               fontsize=8, bbox_to_anchor=(0.5, -0.02),
+               frameon=True, framealpha=0.95, edgecolor="#CCCCCC")
+
     fig.suptitle("QPS vs. Recall@10 Trade-off  (higher-right = better)",
                  fontweight="bold", fontsize=9.5, y=1.01)
     fig.tight_layout(w_pad=2.0)
+    fig.subplots_adjust(bottom=0.20)   # room for legend below panels
     _save(fig, "fig2_qps_vs_recall")
 
 
