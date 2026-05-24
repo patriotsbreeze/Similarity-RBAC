@@ -15,5 +15,6 @@ through denied nodes to preserve graph connectivity.
 Memory overhead is 0.24\%.
 At $N\!=\!200{,}000$ vectors, QPS vs.\ Recall@10 Pareto curves show that
 post-filter recall collapses to zero at strict selectivity (0.02\%) while
-RBAC-HNSW maintains recall above 0.9.
+RBAC-HNSW maintains Recall@10\,${\geq}\,0.99$ across all ef values, and
+dominates the Pareto frontier at every selectivity level tested.
 \end{abstract}

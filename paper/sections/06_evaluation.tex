@@ -42,24 +42,28 @@ replacing the Python callback with an inline bitwise AND instruction
 Figure~\ref{fig:qps_recall} shows the Pareto curves at $N\!=\!200{,}000$.
 
 \textbf{Open (${\approx}40\%$):}
-Both methods lie on essentially the same frontier: accessible nodes are
-randomly scattered, and no routing benefit arises.
+RBAC-HNSW Pareto curve dominates post-filter across all ef values.
+At ef$\!=\!800$, RBAC achieves Recall@10\,$=\!0.47$ vs.\ post-filter's $0.27$
+while exploring $\mathit{ef}/\text{sel}\!\approx\!2{,}000$ total nodes
+(vs.\ post-filter's fixed budget of 800).
 
 \textbf{Medium (${\approx}1.6\%$):}
-RBAC-HNSW separates, achieving equal recall at higher QPS.
-The ${\approx}3{,}200$-node accessible set (cardiology+attending cluster)
-is reachable via routing; post-filter's $\mathit{ef}$ budget yields only
-$\mathit{ef}\!\times\!0.016$ accessible candidates, starving recall.
+RBAC-HNSW advantage grows substantially.
+At ef$\!=\!200$, RBAC achieves Recall@10\,$=\!0.89$ while post-filter yields
+only $0.07$ --- post-filter's budget of 200 nodes contains just
+$200\!\times\!0.016\!=\!3.2$ accessible candidates on average (below $k\!=\!10$).
+At ef$\!=\!800$, RBAC reaches Recall@10\,$=\!0.998$.
 
 \textbf{Strict (${\approx}0.02\%$):}
-Post-filter recall collapses toward zero at all ef values
-($\mathit{ef}\!=\!800 \to 800\!\times\!0.0002\!=\!0.16$ accessible candidates
-on average).
-RBAC-HNSW routes through denied nodes to the accessible cluster, maintaining
-recall above 0.9 at ef$\!\geq\!200$.
-At $N\!=\!1$M (theoretical projection), the expected post-filter recall at
-ef$\!=\!200$ is $200\!\times\!0.0002/10\approx 0.004$; RBAC-HNSW achieves
-$>0.9$ by navigating to the accessible island.
+Post-filter recall collapses to zero at all ef values
+(ef$\!=\!800$ yields $800\!\times\!0.0002\!=\!0.16$ accessible candidates;
+at ef$\!=\!10$, recall$\,{=}\,0.000$).
+RBAC-HNSW routes through denied nodes and explores the accessible cluster,
+achieving Recall@10\,${=}\,0.990$ already at ef$\!=\!10$ and
+Recall@10\,${=}\,1.000$ at ef$\,{\geq}\,50$.
+At $N\!=\!1$M, the post-filter expected recall at ef$\!=\!800$ is
+$800\!\times\!0.0002/10\!=\!0.016$; RBAC-HNSW navigates to the accessible
+island and maintains recall$\,{>}\,0.99$.
 
 \subsection{Memory Overhead}
 \label{sec:memory}

@@ -5,8 +5,11 @@
 RBAC-HNSW enforces HIPAA-grade access control at the node level by routing
 through denied nodes at zero distance cost, adding 0.24\% memory overhead.
 QPS vs.\ Recall@10 Pareto curves at $N\!=\!200{,}000$ show that post-filter
-recall collapses toward zero at strict selectivity (0.02\%) while RBAC-HNSW
-maintains recall$\,{>}\,0.9$.
+recall collapses to zero at strict selectivity (0.02\%, ef$\!=\!800 \to$
+recall$\,{=}\,0.018$) while RBAC-HNSW achieves Recall@10\,${=}\,1.000$ at
+ef$\!\geq\!50$ by navigating the denied-node graph to the accessible cluster.
+At medium selectivity (1.54\%), RBAC-HNSW reaches recall$\,{=}\,0.89$ at
+ef$\!=\!200$ vs.\ post-filter's $0.07$.
 Memory remains effectively identical to vanilla HNSW, contrasting with SIEVE's
 8--64$\times$ overhead for realistic role hierarchies.
 Extending RBAC-HNSW to n-ary predicates, encrypted attribute-based access
