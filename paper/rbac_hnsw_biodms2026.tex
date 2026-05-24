@@ -2,14 +2,23 @@
 %  RBAC-HNSW: Access-Controlled Vector Search
 %  BioDMS @ VLDB 2026 — Project Talk Submission (4 pages)
 %
-%  Format: acmart sigconf (PVLDB Volume 19 style)
+%  Format: PVLDB Volume 19 (acmart sigconf)
 %  Compile: pdflatex → bibtex → pdflatex × 2
 % ============================================================
-\documentclass[sigconf,nonacm]{acmart}
+\documentclass[sigconf, nonacm]{acmart}
 
-\settopmatter{printacmref=false}
-\renewcommand\footnotetextcopyrightpermission[1]{}
-\pagestyle{plain}
+%% PVLDB required macros — fill in after acceptance; use XX for submission
+\newcommand\vldbdoi{XX.XX/XXX.XX}
+\newcommand\vldbpages{XXX-XXX}
+\newcommand\vldbvolume{19}
+\newcommand\vldbissue{1}
+\newcommand\vldbyear{2026}
+\newcommand\vldbauthors{\authors}
+\newcommand\vldbtitle{\shorttitle}
+% Artifact URL (leave empty to suppress the artifact block)
+\newcommand\vldbavailabilityurl{https://github.com/patriotsbreeze/Similarity-RBAC}
+% 'plain' for review/submission; 'empty' for camera-ready
+\newcommand\vldbpagestyle{plain}
 
 % ── Packages ──────────────────────────────────────────────────────────────────
 \usepackage{microtype}
@@ -63,6 +72,32 @@
 
 \maketitle
 
+%%% do not modify the following VLDB block %%
+%%% VLDB block start %%%
+\pagestyle{\vldbpagestyle}
+\begingroup\small\noindent\raggedright\textbf{PVLDB Reference Format:}\\
+\vldbauthors. \vldbtitle. PVLDB, \vldbvolume(\vldbissue): \vldbpages, \vldbyear.\\
+\href{https://doi.org/\vldbdoi}{doi:\vldbdoi}
+\endgroup
+\begingroup
+\renewcommand\thefootnote{}\footnote{\noindent
+This work is licensed under the Creative Commons BY-NC-ND 4.0 International License. Visit \url{https://creativecommons.org/licenses/by-nc-nd/4.0/} to view a copy of this license. For any use beyond those covered by this license, obtain permission by emailing \href{mailto:info@vldb.org}{info@vldb.org}. Copyright is held by the owner/author(s). Publication rights licensed to the VLDB Endowment. \\
+\raggedright Proceedings of the VLDB Endowment, Vol. \vldbvolume, No. \vldbissue\ %
+ISSN 2150-8097. \\
+\href{https://doi.org/\vldbdoi}{doi:\vldbdoi} \\
+}\addtocounter{footnote}{-1}\endgroup
+%%% VLDB block end %%%
+
+%%% do not modify the following VLDB block %%
+%%% VLDB block start %%%
+\ifdefempty{\vldbavailabilityurl}{}{
+\vspace{.3cm}
+\begingroup\small\noindent\raggedright\textbf{PVLDB Artifact Availability:}\\
+The source code, data, and/or other artifacts have been made available at \url{\vldbavailabilityurl}.
+\endgroup
+}
+%%% VLDB block end %%%
+
 % ── Main sections ─────────────────────────────────────────────────────────────
 \input{sections/02_introduction}
 \input{sections/04_algorithm}
@@ -97,6 +132,7 @@
 \end{figure*}
 
 \input{sections/07_conclusion}
+\input{sections/08_authors}
 
 \balance
 \bibliographystyle{ACM-Reference-Format}
