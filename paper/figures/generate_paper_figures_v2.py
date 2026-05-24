@@ -188,9 +188,9 @@ def fig1_traversal_comparison():
 # ─────────────────────────────────────────────────────────────────────────────
 def fig2_qps_vs_recall():
     """Load scale experiment CSV and plot QPS vs Recall Pareto curves."""
-    # Try 1M first, fall back to smaller scales
+    # Try 200k first, then other scales
     csv = None
-    for n in [1000, 500, 200, 50]:
+    for n in [200, 1000, 500, 50]:
         c = RESDIR / f"scale_{n}k_qps_recall.csv"
         if c.exists():
             csv = c
@@ -202,12 +202,10 @@ def fig2_qps_vs_recall():
         if not csv.exists():
             print("  [skip] No QPS-recall data found"); return
         df = pd.read_csv(csv)
-        # Merge with recall data
         rec_csv = RESDIR / "exp1_selectivity_recall.csv"
         if not rec_csv.exists():
             print("  [skip] No recall data found"); return
         rec = pd.read_csv(rec_csv)
-        # Join on selectivity_name + ef + method (approximate)
         df_merged = []
         for sel in df["selectivity_name"].unique():
             for ef in [50, 100, 200, 400, 800]:
@@ -235,12 +233,30 @@ def fig2_qps_vs_recall():
     pcts = {"open": "~40%", "medium": "~1.6%",
             "restricted": "~0.4%", "strict": "~0.02%"}
 
+    # Taller figure gives room for labels; each panel gets more vertical space
     fig, axes = plt.subplots(1, len(sel_names),
-                             figsize=(W2, 2.4), sharey=False)
+                             figsize=(W2, 3.0), sharey=False)
     if len(sel_names) == 1: axes = [axes]
+
+    # Per-method annotation offsets for ef=first (low recall end) and
+    # ef=last (high recall end), chosen to keep labels away from each other.
+    # Format: (xytext_first, xytext_last)
+    offsets = {
+        "RBAC-HNSW":   ((-4, 6),   (4, -10)),   # ef=low → above-left; ef=high → below-right
+        "Post-filter": ((4,  6),   (-38, -10)),  # ef=low → above-right; ef=high → below-left
+    }
+
+    label_kw = dict(
+        textcoords="offset points",
+        fontsize=6,
+        fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.75),
+    )
 
     for ax, sel in zip(axes, sel_names):
         sub = df[df["selectivity_name"] == sel]
+
+        # Draw curves first
         for method, color, marker, lw in [
             ("RBAC-HNSW",   COLORS["rbac"], "o", 2.0),
             ("Post-filter", COLORS["post"], "^", 1.8),
@@ -249,25 +265,42 @@ def fig2_qps_vs_recall():
             if m.empty: continue
             ax.plot(m["recall_at_10"], m["qps"],
                     color=color, marker=marker, label=method,
-                    linewidth=lw, markersize=5, zorder=3)
-            # Label ef values on first/last points
-            if len(m) >= 2:
-                for _, row in m.iloc[[0, -1]].iterrows():
-                    ax.annotate(f"ef={int(row['ef'])}",
-                                (row["recall_at_10"], row["qps"]),
-                                textcoords="offset points",
-                                xytext=(3, 3), fontsize=5.5, color=color)
+                    linewidth=lw, markersize=4.5, zorder=3)
+
+        # Annotate ef labels after both curves drawn (avoids z-order issues)
+        for method, color, marker, lw in [
+            ("RBAC-HNSW",   COLORS["rbac"], "o", 2.0),
+            ("Post-filter", COLORS["post"], "^", 1.8),
+        ]:
+            m = sub[sub["method"] == method].sort_values("recall_at_10")
+            if len(m) < 2: continue
+            xy_first = offsets[method][0]
+            xy_last  = offsets[method][1]
+            first_row = m.iloc[0]
+            last_row  = m.iloc[-1]
+            ax.annotate(f"ef={int(first_row['ef'])}",
+                        (first_row["recall_at_10"], first_row["qps"]),
+                        xytext=xy_first, color=color, **label_kw)
+            ax.annotate(f"ef={int(last_row['ef'])}",
+                        (last_row["recall_at_10"], last_row["qps"]),
+                        xytext=xy_last, color=color, **label_kw)
 
         ax.set_xlabel("Recall@10", fontsize=8)
-        ax.set_ylabel("QPS", fontsize=8)
-        ax.set_title(f"{sel}\n({pcts.get(sel,'')})", fontsize=8.5, pad=2)
-        ax.set_xlim(0, 1.05)
+        ax.set_ylabel("QPS" if ax is axes[0] else "", fontsize=8)
+        ax.set_title(f"{sel}\n({pcts.get(sel,'')})", fontsize=8.5,
+                     fontweight="bold", pad=3)
+        ax.set_xlim(-0.03, 1.08)
         ax.set_yscale("log")
+        ax.tick_params(labelsize=7.5)
+        # Padding inside axes so labels don't clip
+        ax.margins(y=0.15)
 
-    axes[0].legend(fontsize=7, loc="lower right")
+    # Single legend in first panel, bottom-right
+    axes[0].legend(fontsize=7.5, loc="lower right",
+                   framealpha=0.9, edgecolor="#CCCCCC")
     fig.suptitle("QPS vs. Recall@10 Trade-off  (higher-right = better)",
-                 fontweight="bold", fontsize=9, y=1.02)
-    fig.tight_layout(w_pad=1.5)
+                 fontweight="bold", fontsize=9.5, y=1.01)
+    fig.tight_layout(w_pad=2.0)
     _save(fig, "fig2_qps_vs_recall")
 
 
