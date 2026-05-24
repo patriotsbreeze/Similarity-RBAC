@@ -1,34 +1,8 @@
 """
-baselines.py — Post-filtering and Pre-filtering Baselines
-==========================================================
-Implements the two standard literature baselines for filtered ANN search.
-
-Baseline 1: Post-filtering (Section 2.1)
------------------------------------------
-Standard HNSW search retrieves a large candidate set of size ef >> k,
-then discards vectors the querying user lacks permission to see.
-
-Failure mode (low selectivity): at 0.1 % selectivity only 1000 of the 1M
-vectors are accessible. An ef=200 beam search explores only ~200 candidates —
-far fewer than the ~100,000 needed to probabilistically hit 10 accessible
-neighbours.  Result: recall collapses to near 0 % (see Experiment 2).
-
-Literature: Malkov & Yashunin (2020), §6 "comparison with filtering".
-
-Baseline 2: Pre-filtering / Brute-Force Linear Scan (Section 2.2)
-------------------------------------------------------------------
-For each query, first apply the RBAC gate to build an accessible subset,
-then compute exact nearest neighbours over that subset.
-
-Failure mode (high selectivity): at 80 % selectivity the accessible set
-contains 800,000 vectors.  A brute-force linear scan requires 800,000
-distance computations per query → QPS ≈ 1–2 on modern hardware.
-
-Literature: FilteredDiskANN (Gollapudi et al. 2023) §4 "naive baselines".
-
-Both baselines serve as ground-truth recall references:
-  * Pre-filtering provides *exact* results for the accessible subset.
-  * These exact results are the gold standard for recall@k evaluation.
+baselines.py — Post-filtering and Pre-filtering Baselines  (v2)
+================================================================
+v2: numpy-vectorized accessible-set computation + frozenset filter closure,
+matching the v2 RBACIndex approach for fair throughput comparison.
 """
 
 from __future__ import annotations
@@ -36,27 +10,41 @@ from __future__ import annotations
 import time
 import numpy as np
 import hnswlib
+from functools import lru_cache
 from typing import Tuple, Dict, Optional
 
 
 class PostFilterBaseline:
     """
-    Standard HNSW with post-filtering.
+    TRUE post-filtering baseline (v2).
 
-    Retrieves ef_multiplier × k candidates from a vanilla HNSW index, then
-    filters by RBAC mask.  ef_multiplier is tuned at search time.
+    Algorithm: run vanilla HNSW without any access filter to retrieve ef
+    nearest-neighbor candidates, then apply the RBAC bitmask filter to
+    the result set.  This is the natural "retrieve-then-filter" approach.
 
-    Per Malkov & Yashunin (2020): optimal ef for recall@10 ≈ 100–500.
-    At low selectivity we inflate ef aggressively (√(1/sel)) following the
-    analysis in ACORN (Patel et al. 2024).
+    This is strictly DIFFERENT from RBAC-HNSW which routes through the
+    graph with the filter active (hnswlib filter= mechanism).  At low
+    selectivity, the difference is critical:
+
+      - Post-filter (this): explores ef nodes, of which ~ef*selectivity are
+        accessible.  At strict (0.02%), ef=800 yields ~0.16 accessible
+        results → recall ≈ 0.  (Recall collapse.)
+
+      - RBAC-HNSW: hnswlib routes through denied nodes and keeps searching
+        until k accessible are found → recall maintained, QPS lower.
     """
 
-    def __init__(self, dim: int, space: str = "cosine", M: int = 16,
-                 ef_construction: int = 200) -> None:
+    def __init__(self, dim: int, space: str = "cosine",
+                 M: int = 16, ef_construction: int = 200) -> None:
         self.dim = dim
+        self._space = space
+        self._M  = M
+        self._ef_construction = ef_construction
         self._index = hnswlib.Index(space=space, dim=dim)
-        self._index.init_index(max_elements=0, ef_construction=ef_construction, M=M)
-        self._masks: Dict[int, int] = {}
+        self._index.init_index(max_elements=0,
+                               ef_construction=ef_construction, M=M)
+        self._mask_array:  Optional[np.ndarray] = None
+        self._label_array: Optional[np.ndarray] = None
         self.build_time_s = 0.0
 
     def add_items(self, vectors: np.ndarray, masks: np.ndarray,
@@ -67,79 +55,76 @@ class PostFilterBaseline:
         t0 = time.perf_counter()
         self._index.resize_index(self._index.get_current_count() + n)
         self._index.add_items(vectors, ids)
-        for i, label in enumerate(ids):
-            self._masks[int(label)] = int(masks[i])
+        new_masks  = masks.astype(np.uint64)
+        new_labels = ids.astype(np.int64)
+        if self._mask_array is None:
+            self._mask_array  = new_masks
+            self._label_array = new_labels
+        else:
+            self._mask_array  = np.concatenate([self._mask_array,  new_masks])
+            self._label_array = np.concatenate([self._label_array, new_labels])
+        self._get_accessible_set.cache_clear()
         self.build_time_s += time.perf_counter() - t0
 
-    def search(self, query: np.ndarray, k: int, query_mask: int,
-               ef: int = 200) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Retrieve ef candidates, then filter.
-
-        ef is set externally; callers should tune it per selectivity level
-        to make the comparison fair (i.e. give post-filtering its best shot).
-        """
-        self._index.set_ef(ef)
+    @lru_cache(maxsize=64)
+    def _get_accessible_set(self, query_mask: int) -> frozenset:
+        if self._mask_array is None:
+            return frozenset()
         qm = np.uint64(query_mask)
-
-        def _gate(label: int) -> bool:
-            return (np.uint64(self._masks.get(label, 0)) & qm) == qm
-
-        labels, distances = self._index.knn_query(query.reshape(1, -1), k=k,
-                                                   filter=_gate)
-        return labels[0], distances[0]
+        ok = (self._mask_array & qm) == qm
+        return frozenset(self._label_array[ok].tolist())
 
     def batch_search(self, queries: np.ndarray, k: int, query_mask: int,
-                     ef: int = 200, num_threads: int = 1
-                     ) -> Tuple[np.ndarray, np.ndarray]:
-        self._index.set_ef(ef)
-        qm = np.uint64(query_mask)
+                     ef: int = 200,
+                     num_threads: int = 1) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        TRUE post-filter: retrieve ef candidates (no access filter during
+        search), then filter the result set by the RBAC bitmask.
 
-        def _gate(label: int) -> bool:
-            return (np.uint64(self._masks.get(label, 0)) & qm) == qm
-
-        accessible_count = sum(
-            1 for m in self._masks.values()
-            if (np.uint64(m) & qm) == qm
-        )
+        At ef candidates, the expected accessible count is ef * selectivity.
+        At strict selectivity (0.02%), ef=800 yields ~0.16 accessible → 0
+        results → recall collapse.  This is the *correct* baseline to compare
+        against RBAC-HNSW's in-search filter.
+        """
+        accessible = self._get_accessible_set(query_mask)
         nq = len(queries)
-        if accessible_count == 0:
+        if not accessible:
             return (np.full((nq, k), -1, dtype=np.int64),
                     np.full((nq, k), np.inf, dtype=np.float32))
 
-        k_eff = max(1, min(k, accessible_count))
+        # Retrieve ef candidates WITHOUT access filter
+        n_candidates = min(ef, self._index.get_current_count())
+        if n_candidates < 1:
+            return (np.full((nq, k), -1, dtype=np.int64),
+                    np.full((nq, k), np.inf, dtype=np.float32))
 
+        self._index.set_ef(n_candidates)     # ef must be >= k for hnswlib
         try:
-            labels, distances = self._index.knn_query(
-                queries, k=k_eff, filter=_gate, num_threads=num_threads)
+            raw_labels, raw_dists = self._index.knn_query(
+                queries, k=n_candidates, num_threads=num_threads)
         except RuntimeError:
             return (np.full((nq, k), -1, dtype=np.int64),
                     np.full((nq, k), np.inf, dtype=np.float32))
 
-        # Pad columns to k
-        if labels.shape[1] < k:
-            pad = k - labels.shape[1]
-            labels    = np.pad(labels,    ((0,0),(0,pad)), constant_values=-1)
-            distances = np.pad(distances, ((0,0),(0,pad)), constant_values=np.inf)
-        return labels, distances
+        # Post-filter: keep only accessible results
+        result_labels = np.full((nq, k), -1,       dtype=np.int64)
+        result_dists  = np.full((nq, k), np.inf,   dtype=np.float32)
+        for i, (rl, rd) in enumerate(zip(raw_labels, raw_dists)):
+            acc_mask  = np.array([l in accessible for l in rl], dtype=bool)
+            acc_l     = rl[acc_mask][:k]
+            acc_d     = rd[acc_mask][:k]
+            n_found   = len(acc_l)
+            if n_found > 0:
+                result_labels[i, :n_found] = acc_l
+                result_dists[i, :n_found]  = acc_d
+
+        return result_labels, result_dists
 
 
 class PreFilterBaseline:
     """
-    Brute-force linear scan over the access-permitted subset.
-
-    Returns *exact* nearest neighbours — serves as ground truth for recall
-    computation.  QPS is O(|accessible| × dim) which makes it impractical at
-    high selectivity but exact at all selectivity levels.
-
-    Algorithm
-    ---------
-    1. Apply the RBAC gate:  accessible_ids = {i : (masks[i] & qmask) == qmask}
-    2. Compute dot products between query and accessible[sub-batch] (vectorised).
-    3. Return top-k by ascending cosine distance (1 − dot for unit vectors).
-
-    For cosine similarity on unit-norm vectors:
-        cosine_distance(a, b) = 1 − dot(a, b)
+    Brute-force exact linear scan over the accessible subset.
+    Ground truth for recall computation.  Vectorised via numpy BLAS.
     """
 
     def __init__(self, dim: int) -> None:
@@ -150,13 +135,8 @@ class PreFilterBaseline:
 
     def add_items(self, vectors: np.ndarray, masks: np.ndarray,
                   ids: Optional[np.ndarray] = None) -> None:
-        """
-        Store vectors and masks.  Appends to any previously added data.
-        Vectors must already be L2-normalised.
-        """
         n = len(vectors)
         new_ids = np.arange(n, dtype=np.int64) if ids is None else ids
-
         if self._vectors is None:
             self._vectors = vectors.astype(np.float32)
             self._masks   = masks.astype(np.uint64)
@@ -168,64 +148,53 @@ class PreFilterBaseline:
 
     def search(self, query: np.ndarray, k: int,
                query_mask: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Exact nearest neighbours in the accessible subset."""
         qm = np.uint64(query_mask)
-        accessible_mask = (self._masks & qm) == qm
-        accessible_idx  = np.where(accessible_mask)[0]
-
-        if len(accessible_idx) == 0:
+        ok  = (self._masks & qm) == qm
+        idx = np.where(ok)[0]
+        if len(idx) == 0:
             return np.array([], dtype=np.int64), np.array([], dtype=np.float32)
-
-        accessible_vecs = self._vectors[accessible_idx]
-        # Cosine distance = 1 − dot (vectors are unit-normalised)
-        dots      = accessible_vecs @ query
-        distances = (1.0 - dots).astype(np.float32)
-
-        k_actual  = min(k, len(accessible_idx))
+        vecs      = self._vectors[idx]
+        distances = (1.0 - vecs @ query).astype(np.float32)
+        k_actual  = min(k, len(idx))
         top_idx   = np.argpartition(distances, k_actual - 1)[:k_actual]
         top_idx   = top_idx[np.argsort(distances[top_idx])]
-
-        labels    = self._ids[accessible_idx[top_idx]]
-        return labels, distances[top_idx]
+        return self._ids[idx[top_idx]], distances[top_idx]
 
     def batch_search(self, queries: np.ndarray, k: int,
-                     query_mask: int) -> Tuple[np.ndarray, np.ndarray]:
+                     query_mask: int,
+                     chunk_size: int = 500) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Batch exact search.  Vectorised over queries for efficiency.
-        Memory: O(|accessible| × nq) floats — may require chunking for large nq.
+        Vectorised batch exact search.
+        Uses chunked matrix multiply to stay within memory limits at 1M scale.
         """
         qm = np.uint64(query_mask)
-        accessible_mask = (self._masks & qm) == qm
-        accessible_idx  = np.where(accessible_mask)[0]
+        ok  = (self._masks & qm) == qm
+        idx = np.where(ok)[0]
+        nq  = len(queries)
+        if len(idx) == 0:
+            return (np.full((nq, k), -1, dtype=np.int64),
+                    np.full((nq, k), np.inf, dtype=np.float32))
 
-        if len(accessible_idx) == 0:
-            empty_l = np.full((len(queries), k), -1, dtype=np.int64)
-            empty_d = np.full((len(queries), k), np.inf, dtype=np.float32)
-            return empty_l, empty_d
+        acc_vecs = self._vectors[idx]   # (n_acc, dim)
+        k_actual = min(k, len(idx))
+        all_labels    = np.full((nq, k), -1, dtype=np.int64)
+        all_distances = np.full((nq, k), np.inf, dtype=np.float32)
 
-        accessible_vecs = self._vectors[accessible_idx]   # (n_acc, dim)
-        # (nq, n_acc) dot product matrix — vectorised BLAS
-        dots      = queries @ accessible_vecs.T            # (nq, n_acc)
-        distances = (1.0 - dots).astype(np.float32)       # (nq, n_acc)
+        for qi_start in range(0, nq, chunk_size):
+            qi_end = min(qi_start + chunk_size, nq)
+            q_chunk = queries[qi_start:qi_end]           # (chunk, dim)
+            dots    = q_chunk @ acc_vecs.T               # (chunk, n_acc)
+            dists   = (1.0 - dots).astype(np.float32)
 
-        n_acc     = len(accessible_idx)
-        k_actual  = min(k, n_acc)
-
-        all_labels    = np.full((len(queries), k), -1, dtype=np.int64)
-        all_distances = np.full((len(queries), k), np.inf, dtype=np.float32)
-
-        for qi in range(len(queries)):
-            top_idx = np.argpartition(distances[qi], k_actual - 1)[:k_actual]
-            top_idx = top_idx[np.argsort(distances[qi, top_idx])]
-            all_labels[qi,    :k_actual] = self._ids[accessible_idx[top_idx]]
-            all_distances[qi, :k_actual] = distances[qi, top_idx]
+            for qi_local, qi in enumerate(range(qi_start, qi_end)):
+                top_idx = np.argpartition(dists[qi_local], k_actual-1)[:k_actual]
+                top_idx = top_idx[np.argsort(dists[qi_local, top_idx])]
+                all_labels[qi,    :k_actual] = self._ids[idx[top_idx]]
+                all_distances[qi, :k_actual] = dists[qi_local, top_idx]
 
         return all_labels, all_distances
 
     def memory_bytes(self) -> Dict[str, int]:
         n = len(self._vectors) if self._vectors is not None else 0
-        return {
-            "vectors_bytes": n * self.dim * 4,
-            "masks_bytes":   n * 8,
-            "total_bytes":   n * self.dim * 4 + n * 8,
-        }
+        return {"vectors_bytes": n*self.dim*4, "masks_bytes": n*8,
+                "total_bytes": n*self.dim*4 + n*8}

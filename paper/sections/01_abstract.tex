@@ -1,32 +1,19 @@
 % ── Section: Abstract ────────────────────────────────────────────────────────
 \begin{abstract}
-Modern clinical AI systems store millions of high-dimensional vector
-embeddings of patient records and must answer similarity search queries
-in real time---while strictly enforcing fine-grained access control
-policies mandated by regulations such as HIPAA.
-Today, no vector database index handles this requirement efficiently
-across the full spectrum of \emph{query selectivity}: the fraction of the
-database a given user is permitted to see.
-Post-filtering (retrieve candidates, then discard unauthorized results)
-collapses to near-zero recall when access is restricted to $\leq 1\%$
-of records.
-Brute-force pre-filtering achieves exact results but degrades to
-single-digit queries per second at broad access levels.
-Multi-index architectures consume 8--64$\times$ more memory for realistic
-role hierarchies.
+Clinical AI systems store millions of high-dimensional vector embeddings of
+patient records and must answer similarity search queries in real time while
+enforcing HIPAA access control.
+Post-filtering (retrieve candidates, then discard unauthorized ones) collapses
+to near-zero recall when access is restricted to $\leq 1\%$ of records.
+Brute-force pre-filtering is exact but scales poorly. Multi-index architectures
+(e.g., SIEVE) consume 8--64$\times$ more memory for realistic role hierarchies.
 
-We present \textbf{RBAC-HNSW}: a single modification to the
-Hierarchical Navigable Small World (HNSW) graph-search algorithm that
-enforces Role-Based Access Control (RBAC) at the node level, before the
-expensive distance computation, while \emph{routing through} denied nodes
-to preserve graph connectivity.
-A 64-bit bitmask co-located with each vector adds only 0.24\% memory
-overhead and costs $\approx\!1$ CPU cycle per access check.
-On a 50{,}000-vector synthetic clinical dataset (BioBERT-scale,
-768-dimensional), RBAC-HNSW achieves $\geq 0.90$ recall@10 across all
-tested selectivity levels (0.02\%--40\%) and adds negligible memory
-compared with the best multi-index competitor.
-This paper presents the algorithm, a realistic HIPAA-motivated bitmask
-schema for hospital access hierarchies, and an empirical evaluation
-targeting the data-management community.
+We present \textbf{RBAC-HNSW}: a single modification to the HNSW graph-search
+algorithm that evaluates a 64-bit RBAC bitmask gate \emph{before} the
+distance computation (${\approx}1$~ns vs.\ ${\approx}30$~ns) and routes
+through denied nodes to preserve graph connectivity.
+Memory overhead is 0.24\%.
+At $N\!=\!200{,}000$ vectors, QPS vs.\ Recall@10 Pareto curves show that
+post-filter recall collapses to zero at strict selectivity (0.02\%) while
+RBAC-HNSW maintains recall above 0.9.
 \end{abstract}

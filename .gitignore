@@ -35,3 +35,16 @@ Thumbs.db
 # Results CSVs and plots are tracked (small, reproducible)
 # Uncomment to exclude:
 # results/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
+*.lot
+*.lof

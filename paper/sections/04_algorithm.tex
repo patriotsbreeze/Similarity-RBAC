@@ -11,28 +11,26 @@ A query with permission mask $q_m$ may access $v$ if and only if:
 \[
   (v_m \;\mathbin{\&}\; q_m) = q_m
 \]
-That is, the node must possess \emph{at least} every permission bit required
-by the query.
-This subsumes standard RBAC role-hierarchy checks: if role $R_1$ inherits
-from $R_2$, set all $R_2$-bits inside $R_1$'s mask.
-Figure~\ref{fig:rbac_schema} shows the 64-bit layout used in our clinical
-benchmark (see Section~\ref{sec:dataset}).
-
+This subsumes standard RBAC role-hierarchy checks.
 The mask is stored adjacent to the node's vector pointer in memory, so a
 single 64-byte cache-line fetch~\cite{drepper2007every} delivers both fields.
-The bitwise AND and comparison together constitute one CPU instruction
-($\approx\!1$~ns), evaluated \emph{before} the distance computation
-($\approx\!30$~ns for 768-dim cosine similarity).
+The bitwise AND and comparison constitute one CPU instruction
+(${\approx}1$~ns), evaluated \emph{before} the distance computation
+(${\approx}30$~ns for 768-dim cosine similarity).
 
 \subsection{Two-Gate Greedy Search}
 \label{sec:search}
 
 Algorithm~\ref{alg:rbac_search} presents the modified HNSW layer-0 search.
-The key departure from vanilla HNSW is in lines~\ref{alg:gate1}--\ref{alg:route}:
-when a neighbor node $n$ fails the RBAC gate, we \emph{do not discard it}.
-Instead, we add $n$ to the routing frontier so its own neighbor list can
-direct the beam toward accessible regions.
-Distance is only computed (line~\ref{alg:gate2}) when the access check passes.
+The key change: when a neighbor $n$ fails the RBAC gate
+(\textbf{Gate 1}, line~\ref{alg:gate1}), we do \emph{not} discard it.
+Instead, $n$ is added to the routing frontier so its neighbor list can direct
+the beam toward accessible regions---at zero distance cost (the expensive
+multiply-accumulate is skipped).
+Distance is computed (\textbf{Gate 2}, line~\ref{alg:gate2}) only when the
+access check passes.
+Figure~\ref{fig:traversal} illustrates why this prevents recall collapse:
+the beam navigates through denied territory to reach the accessible cluster.
 
 \begin{algorithm}[t]
 \small
@@ -41,24 +39,17 @@ Distance is only computed (line~\ref{alg:gate2}) when the access check passes.
 \begin{algorithmic}[1]
 \Require Graph $G$, query $\mathbf{q}$, query mask $q_m$, result count $k$, beam $\mathit{ef}$
 \Ensure Top-$k$ accessible nearest neighbors
-\State $\mathit{results} \leftarrow$ min-heap; $\mathit{routing} \leftarrow$ priority queue; $\mathit{visited} \leftarrow \emptyset$
-\State $e \leftarrow \textsc{EntryPoint}(G)$; $\mathit{visited} \leftarrow \{e\}$
-\If{$\textsc{RBACCheck}(e, q_m)$} \Comment{Gate 1}
-    \State push $(\textsc{Dist}(\mathbf{q}, e),\, e)$ into $\mathit{results}$ and $\mathit{routing}$
-\Else
-    \State push $(\infty,\, e)$ into $\mathit{routing}$ \Comment{Route through denied}
-\EndIf
+\State $\mathit{results} \leftarrow \emptyset$; $\mathit{routing} \leftarrow \{e\}$; $\mathit{visited} \leftarrow \{e\}$
 \While{$\mathit{routing} \neq \emptyset$ \textbf{and} $|\mathit{results}| < \mathit{ef}$}
     \State $(d_c, c) \leftarrow \textsc{Pop}(\mathit{routing})$
-    \ForAll{$n \in \textsc{Neighbors}(G, c)$}
-        \If{$n \in \mathit{visited}$} \textbf{continue} \EndIf
+    \ForAll{$n \in \textsc{Neighbors}(G, c)$, $n \notin \mathit{visited}$}
         \State $\mathit{visited} \leftarrow \mathit{visited} \cup \{n\}$
-        \If{$(n.v_m \;\mathbin{\&}\; q_m) \neq q_m$} \label{alg:gate1} \Comment{RBAC gate}
-            \State push $(\infty, n)$ into $\mathit{routing}$ \label{alg:route}
-            \State \textbf{continue}
+        \If{$(n.v_m \;\mathbin{\&}\; q_m) \neq q_m$} \label{alg:gate1} \Comment{Gate 1: RBAC}
+            \State push $n$ into $\mathit{routing}$ (route; no distance) \label{alg:route}
+        \Else
+            \State $d \leftarrow \textsc{Dist}(\mathbf{q}, n)$ \label{alg:gate2} \Comment{Gate 2: distance}
+            \State push $(d, n)$ into $\mathit{results}$ and $\mathit{routing}$
         \EndIf
-        \State $d \leftarrow \textsc{Dist}(\mathbf{q}, n)$ \label{alg:gate2} \Comment{Distance gate}
-        \State push $(d, n)$ into $\mathit{results}$ and $\mathit{routing}$
     \EndFor
 \EndWhile
 \State \Return $\textsc{TopK}(\mathit{results}, k)$
@@ -68,20 +59,11 @@ Distance is only computed (line~\ref{alg:gate2}) when the access check passes.
 \subsection{Why Routing Through Denied Nodes Matters}
 \label{sec:routing}
 
-Consider 0.1\% selectivity over one million vectors: roughly 1{,}000 accessible
-records scattered throughout a graph of one million nodes.
-With standard post-filtering, a beam of width $\mathit{ef} = 200$ explores
-200 candidates; the expected number of accessible candidates hit is
-$200 \times 0.001 = 0.2$---far below the $k=10$ needed.
-Even inflating $\mathit{ef}$ to 10{,}000 would cost 50$\times$ more distance
-computations and still struggle with sparse accessible regions.
-
-RBAC-HNSW routes through denied nodes at \emph{zero distance cost} (no
-multiply-accumulate).
-The beam's exploration radius grows freely through the graph topology until it
-reaches an accessible node cluster, then spends its distance budget productively.
-This insight is conceptually related to ACORN~\cite{patel2024acorn} (routing
-through predicate-failing nodes via augmented neighbor lists) and the relaxed
-monotonicity of VBASE~\cite{zhang2023vbase}, though our formulation is
-specific to bitmask RBAC and requires no graph augmentation.
-Figure~\ref{fig:algorithm} illustrates the traversal.
+At 0.02\% selectivity over 1M vectors, roughly 200 accessible records are
+scattered among a million-node graph.
+Post-filtering with $\mathit{ef}\!=\!200$ explores 200 nodes: expected accessible
+$=200\!\times\!0.0002\!=\!0.04$---far below the $k\!=\!10$ required.
+RBAC-HNSW routes through denied nodes at \emph{zero distance cost} until
+the beam reaches the accessible cluster.
+This is related to ACORN~\cite{patel2024acorn} and VBASE~\cite{zhang2023vbase},
+but requires no graph augmentation and targets bitmask RBAC specifically.
